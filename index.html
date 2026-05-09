@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Piping Material Intelligence — Salak Unit 7</title>
+<title>Piping Material Monitoring — Salak Unit 7</title>
+<link rel="icon" type="image/png" href="logo.png">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -966,6 +967,12 @@ function loadData() {
       
       obj[f] = val;
     });
+    
+    // Logic: If required qty is 0, treat it as "On Site" so it doesn't stay pending
+    if (obj.qtyReq === 0) {
+      obj.statusMtl = 'On Site';
+    }
+    
     return obj;
   });
 }
