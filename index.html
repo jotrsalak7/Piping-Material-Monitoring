@@ -890,20 +890,52 @@ const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwL58Ard32rBhgYr
 let RAW_DATA = [];
 
 function loadData() {
-  // Convert compact arrays to objects
-  return RAW_DATA.map(r => {
+  const COL_MAP = {
+    'area': 1,
+    'package': 2,
+    'bomTitle': 5,
+    'identCode': 7,
+    'partName': 8,
+    'desc': 9,
+    'lSize': 10,
+    'qtyReq': 12,
+    'unit': 13,
+    'poNo': 15,
+    'vendor': 17,
+    'statusPO': 20,
+    'mfgPct': 25,
+    'eta': 30,
+    'ata': 31,
+    'pctDelv': 32,
+    'qtySite': 34,
+    'shortage': 35,
+    'statusMtl': 42
+  };
+
+  // Convert full Google Sheet rows (43 columns) to objects
+  // Filter out any header rows or empty rows
+  return RAW_DATA.filter(r => typeof r[0] === 'number').map(r => {
     const obj = {};
-    // Auto-detect if the first column is a 'No' index (number) and shift array if needed
-    let offset = 0;
-    if (r.length >= FIELDS.length + 1 && typeof r[0] === 'number') {
-      offset = 1;
-    }
-    FIELDS.forEach((f,i) => {
-      let val = r[i + offset];
+    FIELDS.forEach(f => {
+      let val = r[COL_MAP[f]];
+      
       // Force numeric conversions for math operations
-      if (['qtyReq', 'mfgPct', 'pctDelv', 'qtySite', 'shortage'].includes(f)) {
+      if (['qtyReq', 'qtySite', 'shortage'].includes(f)) {
         val = Number(val) || 0;
       }
+      
+      // Convert decimal percentages (e.g. 1) back to 100 for the dashboard UI
+      if (['mfgPct', 'pctDelv'].includes(f)) {
+        val = (Number(val) || 0) * 100;
+      }
+      
+      // Handle Date formatting from Google Sheet ISO strings
+      if (['eta', 'ata'].includes(f) && val) {
+        if (typeof val === 'string' && val.includes('T')) {
+          val = val.split('T')[0];
+        }
+      }
+      
       obj[f] = val;
     });
     return obj;
