@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -886,7 +886,7 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
 // ════════════════════════════════════════════
 const FIELDS = ['area','package','bomTitle','identCode','partName','desc','lSize','qtyReq','unit','poNo','vendor','statusPO','mfgPct','eta','ata','pctDelv','qtySite','shortage','statusMtl'];
 
-const APP_SCRIPT_URL = "PASTE_YOUR_APP_SCRIPT_URL_HERE";
+const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwL58Ard32rBhgYrQNcSk3ks6MLkMfnVh8nKLlNOZkmS8f19tG3oH7d0kV74XJn2ho_/exec";
 let RAW_DATA = [];
 
 function loadData() {
@@ -906,11 +906,6 @@ let filteredData = [];
 // ════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    if (APP_SCRIPT_URL === "https://script.google.com/macros/s/AKfycbwJLNxPBrWHnpS7MLy--Ikpqwr-S6qNrLXtlszRnNlsHhxHgWFnE9gUitCzeIJpjePJ/exec") {
-      alert("Please paste your Google Apps Script Web App URL in APP_SCRIPT_URL");
-      return;
-    }
-    
     // Show loading
     const el = document.getElementById('page-overview');
     if (el) el.innerHTML = '<h3 style="padding:2rem;">Loading live data from Google Sheets...</h3>';
