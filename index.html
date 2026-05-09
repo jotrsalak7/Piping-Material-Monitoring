@@ -1284,17 +1284,27 @@ function renderBuildability() {
   const bomGroups = {};
   data.forEach(d => {
     const key = d.bomTitle || d.bomNo || 'Unknown';
-    if (!bomGroups[key]) bomGroups[key] = { title: key, area: d.area, items: [], totalParts: 0, available: 0, partial: 0, missing: 0 };
-    bomGroups[key].totalParts++;
+    if (!bomGroups[key]) bomGroups[key] = { title: key, area: d.area, items: [], totalParts: 0, available: 0, partial: 0, missing: 0, totalQtyReq: 0, totalQtySite: 0 };
+    
     bomGroups[key].items.push(d);
-    if (d.qtySite >= d.qtyReq && d.qtyReq > 0) bomGroups[key].available++;
-    else if (d.qtySite > 0) bomGroups[key].partial++;
-    else bomGroups[key].missing++;
+    
+    // Ignore items with 0 required quantity for buildability calculations
+    if (d.qtyReq > 0) {
+      bomGroups[key].totalParts++;
+      bomGroups[key].totalQtyReq += d.qtyReq;
+      // Use capped qtySite to prevent surplus from artificially inflating progress
+      bomGroups[key].totalQtySite += Math.min(d.qtySite, d.qtyReq);
+      
+      if (d.qtySite >= d.qtyReq) bomGroups[key].available++;
+      else if (d.qtySite > 0) bomGroups[key].partial++;
+      else bomGroups[key].missing++;
+    }
   });
 
   const boms = Object.values(bomGroups).map(b => {
-    b.buildPct = b.totalParts > 0 ? Math.round(b.available / b.totalParts * 100) : 0;
-    b.buildable = b.available === b.totalParts;
+    // Buildability is now based on QTY percentage, not line item count
+    b.buildPct = b.totalQtyReq > 0 ? Math.round((b.totalQtySite / b.totalQtyReq) * 100) : 100;
+    b.buildable = b.buildPct === 100;
     return b;
   }).sort((a,b) => b.buildPct - a.buildPct);
 
