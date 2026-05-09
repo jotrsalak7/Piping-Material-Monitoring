@@ -237,6 +237,28 @@ body {
 
 .filter-select:focus { border-color: var(--ink); }
 
+.btn-sync {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-bg);
+  color: var(--ink);
+  border: 1px solid var(--cream);
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.btn-sync:hover { background: var(--cream); }
+.btn-sync.loading svg { animation: spin 1s linear infinite; }
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
 .content { padding: 24px 32px 48px; }
 
 /* ── PAGES ── */
@@ -854,6 +876,10 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
           <input type="text" id="globalSearch" placeholder="Search ident, part, PO..." oninput="handleSearch()">
         </div>
         <div class="filter-group">
+          <button class="btn-sync" onclick="syncData()" id="btnSync" title="Fetch latest data from Google Sheets">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Sync
+          </button>
           <select class="filter-select" id="filterArea" onchange="applyFilters()">
             <option value="">All Areas</option>
           </select>
@@ -1042,6 +1068,48 @@ function applyFilters() {
 }
 
 function handleSearch() { applyFilters(); }
+
+async function syncData() {
+  const btn = document.getElementById('btnSync');
+  if (btn.classList.contains('loading')) return;
+  
+  btn.classList.add('loading');
+  btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Syncing...`;
+  
+  try {
+    const response = await fetch(APP_SCRIPT_URL);
+    const json = await response.json();
+    if (json.data && json.data.length) {
+      RAW_DATA = json.data;
+      ALL_DATA = loadData();
+      
+      // Preserve current filter selections
+      const selArea = document.getElementById('filterArea').value;
+      const selPkg = document.getElementById('filterPackage').value;
+      
+      // Reset and repopulate dropdowns in case there are new areas/packages
+      document.getElementById('filterArea').innerHTML = '<option value="">All Areas</option>';
+      document.getElementById('filterPackage').innerHTML = '<option value="">All Packages</option>';
+      populateFilters();
+      
+      // Restore selections if they still exist
+      if ([...document.getElementById('filterArea').options].some(o => o.value === selArea)) {
+        document.getElementById('filterArea').value = selArea;
+      }
+      if ([...document.getElementById('filterPackage').options].some(o => o.value === selPkg)) {
+        document.getElementById('filterPackage').value = selPkg;
+      }
+      
+      applyFilters(); // Re-render current page with new data
+      setupNav(); // Update badges
+    }
+  } catch(e) {
+    alert('Failed to sync data from Google Sheets.');
+  } finally {
+    btn.classList.remove('loading');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Sync`;
+  }
+}
 
 // ════════════════════════════════════════════
 // NAVIGATION
@@ -1250,6 +1318,7 @@ function renderOverview() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Package</th>
               <th>Items</th>
               <th>On Site</th>
@@ -1259,8 +1328,9 @@ function renderOverview() {
             </tr>
           </thead>
           <tbody>
-            ${pkgSummary.map(p => `
+            ${pkgSummary.map((p, i) => `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td><span class="tag tag-blue">${p.pkg}</span></td>
                 <td class="cell-num">${p.total}</td>
                 <td class="cell-num">${p.onSite}</td>
@@ -1382,6 +1452,7 @@ function renderBuildability() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>BOM Title</th>
               <th>Area</th>
               <th>Parts</th>
@@ -1393,8 +1464,9 @@ function renderBuildability() {
             </tr>
           </thead>
           <tbody>
-            ${boms.slice(0, 60).map(b => `
+            ${boms.slice(0, 60).map((b, i) => `
               <tr style="cursor:pointer" onclick="showBomDetail('${b.title.replace(/'/g,"\\'")}')">
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${b.title}</td>
                 <td><span class="tag tag-blue">${b.area}</span></td>
                 <td class="cell-num">${b.totalParts}</td>
@@ -1505,6 +1577,7 @@ function renderShortages() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Area</th>
               <th>Part</th>
               <th>Size</th>
@@ -1519,8 +1592,9 @@ function renderShortages() {
             </tr>
           </thead>
           <tbody>
-            ${shortages.slice(0, 100).map(d => `
+            ${shortages.slice(0, 100).map((d, i) => `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td><span class="tag tag-blue">${d.area}</span></td>
                 <td>${d.partName}</td>
                 <td class="cell-num">${d.lSize}"</td>
@@ -1610,6 +1684,7 @@ function renderSupply() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Vendor</th>
               <th>Items</th>
               <th>Total Qty</th>
@@ -1619,8 +1694,9 @@ function renderSupply() {
             </tr>
           </thead>
           <tbody>
-            ${vendorList.map(([v, vs]) => `
+            ${vendorList.map(([v, vs], i) => `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td style="font-weight:500">${v}</td>
                 <td class="cell-num">${vs.items}</td>
                 <td class="cell-num">${fmt(Math.round(vs.totalQty))}</td>
@@ -1664,6 +1740,7 @@ function renderSupply() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Area</th>
               <th>Part</th>
               <th>Size</th>
@@ -1678,8 +1755,9 @@ function renderSupply() {
             </tr>
           </thead>
           <tbody>
-            ${inSupply.slice(0, 80).map(d => `
+            ${inSupply.slice(0, 80).map((d, i) => `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td><span class="tag tag-blue">${d.area}</span></td>
                 <td>${d.partName}</td>
                 <td class="cell-num">${d.lSize}"</td>
@@ -1764,6 +1842,7 @@ function renderInventory() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Area</th>
               <th>Package</th>
               <th>Part</th>
@@ -1776,10 +1855,11 @@ function renderInventory() {
             </tr>
           </thead>
           <tbody>
-            ${onSite.sort((a,b) => b.qtySite - a.qtySite).slice(0,80).map(d => {
+            ${onSite.sort((a,b) => b.qtySite - a.qtySite).slice(0,80).map((d, i) => {
               const diff = d.qtySite - d.qtyReq;
               return `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td><span class="tag tag-blue">${d.area}</span></td>
                 <td style="font-size:11px">${d.package}</td>
                 <td>${d.partName}</td>
@@ -1968,6 +2048,7 @@ function renderAllItems() {
         <table>
           <thead>
             <tr>
+              <th width="40">No.</th>
               <th>Area</th>
               <th>Package</th>
               <th>Part Name</th>
@@ -1986,8 +2067,9 @@ function renderAllItems() {
             </tr>
           </thead>
           <tbody>
-            ${pageData.map(d => `
+            ${pageData.map((d, i) => `
               <tr>
+                <td style="color:var(--olive);font-size:11px">${start + i + 1}</td>
                 <td><span class="tag tag-blue">${d.area}</span></td>
                 <td style="font-size:11px">${d.package}</td>
                 <td>${d.partName}</td>
