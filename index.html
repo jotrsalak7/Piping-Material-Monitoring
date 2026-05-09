@@ -58,6 +58,22 @@ body {
 .sidebar-brand {
   padding: 0 24px 24px;
   border-bottom: 1px solid rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-brand .brand-logo {
+  width: 40px;
+  height: auto;
+  border-radius: 4px;
+  background: #fff; /* In case the logo has transparency */
+  padding: 2px;
+}
+
+.sidebar-brand .brand-text {
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-brand h1 {
@@ -775,8 +791,11 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <h1>Material Intelligence</h1>
-      <div class="subtitle">Salak Unit 7 — Piping</div>
+      <img src="logo.png" alt="Timas Rekind" class="brand-logo">
+      <div class="brand-text">
+        <h1>Piping Material Monitoring</h1>
+        <div class="subtitle">Salak Unit 7 — Piping</div>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section-label">Overview</div>
@@ -914,7 +933,16 @@ function loadData() {
 
   // Convert full Google Sheet rows (43 columns) to objects
   // Filter out any header rows or empty rows
-  return RAW_DATA.filter(r => typeof r[0] === 'number').map(r => {
+  return RAW_DATA.filter(r => {
+    // Basic valid row check (has a valid "No" column or "Area" column)
+    if (typeof r[0] !== 'number' || !r[1]) return false;
+    
+    // Ignore "Grand Total" or empty Area rows that might be at the bottom
+    const areaVal = String(r[1]).trim().toLowerCase();
+    if (areaVal === 'grand total' || areaVal === '') return false;
+    
+    return true;
+  }).map(r => {
     const obj = {};
     FIELDS.forEach(f => {
       let val = r[COL_MAP[f]];
