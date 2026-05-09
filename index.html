@@ -893,7 +893,19 @@ function loadData() {
   // Convert compact arrays to objects
   return RAW_DATA.map(r => {
     const obj = {};
-    FIELDS.forEach((f,i) => obj[f] = r[i]);
+    // Auto-detect if the first column is a 'No' index (number) and shift array if needed
+    let offset = 0;
+    if (r.length >= FIELDS.length + 1 && typeof r[0] === 'number') {
+      offset = 1;
+    }
+    FIELDS.forEach((f,i) => {
+      let val = r[i + offset];
+      // Force numeric conversions for math operations
+      if (['qtyReq', 'mfgPct', 'pctDelv', 'qtySite', 'shortage'].includes(f)) {
+        val = Number(val) || 0;
+      }
+      obj[f] = val;
+    });
     return obj;
   });
 }
