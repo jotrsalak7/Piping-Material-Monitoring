@@ -318,6 +318,141 @@ body {
 .kpi-card.good { border-left: 3px solid var(--green); }
 .kpi-card.good .kpi-value { color: var(--green); }
 
+/* ── CLICKABLE KPI CARDS (filter mode) ── */
+.kpi-card.clickable {
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+.kpi-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(27,54,93,0.08);
+  border-color: var(--ink-light);
+}
+.kpi-card.clickable:active {
+  transform: translateY(0);
+}
+.kpi-card.clickable .kpi-hint {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--warm-gray);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.kpi-card.clickable:hover .kpi-hint { opacity: 1; }
+
+.kpi-card.active-filter {
+  background: #fff;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--ink), 0 4px 16px rgba(27,54,93,0.12);
+  transform: translateY(-1px);
+}
+.kpi-card.active-filter .kpi-hint {
+  opacity: 1;
+  color: var(--ink);
+  font-weight: 600;
+}
+.kpi-card.active-filter::after {
+  content: '✓';
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.kpi-card.active-filter .kpi-hint { display: none; }
+
+/* ── RESET FILTER BUTTON ── */
+.btn-reset-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--olive);
+  border: 1px solid var(--cream);
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.btn-reset-filter:hover {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: var(--red);
+}
+.btn-reset-filter.has-active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.btn-reset-filter.has-active:hover {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+.btn-reset-filter svg { width: 12px; height: 12px; }
+
+/* ── ACTIVE FILTER STRIP ── */
+.filter-strip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  background: #fff;
+  border: 1px dashed var(--ink-light);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.filter-strip.visible { display: flex; }
+.filter-strip-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  color: var(--olive);
+  font-weight: 600;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--blue-tag);
+  color: var(--ink);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.filter-chip button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity var(--transition);
+}
+.filter-chip button:hover { opacity: 1; }
+
 /* ── SECTION HEADERS ── */
 .section-header {
   display: flex;
@@ -892,6 +1027,10 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
             <option value="Partial Delv.">Partial Delv.</option>
             <option value="-">Pending</option>
           </select>
+          <button class="btn-reset-filter" id="btnResetFilter" onclick="resetAllFilters()" title="Clear all filters">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Reset
+          </button>
         </div>
       </div>
     </div>
@@ -1006,6 +1145,7 @@ function loadData() {
 
 let ALL_DATA = [];
 let filteredData = [];
+let kpiFilter = null; // 'shortage' | 'qty-short' | null  (onsite & partial use filterStatus dropdown)
 
 // ════════════════════════════════════════════
 // INIT
@@ -1031,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateFilters();
     renderOverview();
     setupNav();
+    updateResetButtonState();
   } catch (error) {
     console.error('Error fetching data:', error);
     alert('Failed to load data. Ensure your Apps Script is deployed.');
@@ -1056,6 +1197,9 @@ function applyFilters() {
     if (area && d.area !== area) return false;
     if (pkg && d.package !== pkg) return false;
     if (status && d.statusMtl !== status) return false;
+    // KPI-driven filters (shortage / qty-short)
+    if (kpiFilter === 'shortage' && !(d.shortage < 0)) return false;
+    if (kpiFilter === 'qty-short' && !(d.qtySite < d.qtyReq)) return false;
     if (search) {
       const hay = [d.identCode, d.partName, d.desc, d.poNo, d.vendor, d.area, d.package].join(' ').toLowerCase();
       if (!hay.includes(search)) return false;
@@ -1063,11 +1207,60 @@ function applyFilters() {
     return true;
   });
 
+  updateResetButtonState();
   const activePage = document.querySelector('.nav-item.active')?.dataset?.page || 'overview';
   renderPage(activePage);
 }
 
 function handleSearch() { applyFilters(); }
+
+// ════════════════════════════════════════════
+// KPI-AS-FILTER LOGIC
+// ════════════════════════════════════════════
+function setKpiFilter(filter) {
+  const statusSel = document.getElementById('filterStatus');
+  // Toggle behavior: clicking active filter clears it
+  if (filter === 'onsite') {
+    if (statusSel.value === 'On Site') { statusSel.value = ''; }
+    else { statusSel.value = 'On Site'; kpiFilter = null; }
+  } else if (filter === 'partial') {
+    if (statusSel.value === 'Partial Delv.') { statusSel.value = ''; }
+    else { statusSel.value = 'Partial Delv.'; kpiFilter = null; }
+  } else if (filter === 'shortage') {
+    kpiFilter = (kpiFilter === 'shortage') ? null : 'shortage';
+    if (kpiFilter === 'shortage') statusSel.value = '';
+  } else if (filter === 'qty-short') {
+    kpiFilter = (kpiFilter === 'qty-short') ? null : 'qty-short';
+    if (kpiFilter === 'qty-short') statusSel.value = '';
+  }
+  applyFilters();
+}
+
+function resetAllFilters() {
+  document.getElementById('filterArea').value = '';
+  document.getElementById('filterPackage').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('globalSearch').value = '';
+  kpiFilter = null;
+  applyFilters();
+}
+
+function hasAnyActiveFilter() {
+  return !!(
+    document.getElementById('filterArea').value ||
+    document.getElementById('filterPackage').value ||
+    document.getElementById('filterStatus').value ||
+    document.getElementById('globalSearch').value ||
+    kpiFilter
+  );
+}
+
+function updateResetButtonState() {
+  const btn = document.getElementById('btnResetFilter');
+  if (!btn) return;
+  if (hasAnyActiveFilter()) btn.classList.add('has-active');
+  else btn.classList.remove('has-active');
+}
 
 async function syncData() {
   const btn = document.getElementById('btnSync');
@@ -1229,29 +1422,63 @@ function renderOverview() {
   }).sort((a,b) => a.pct - b.pct);
 
   const el = document.getElementById('page-overview');
+
+  // Determine active state for each KPI
+  const statusVal = document.getElementById('filterStatus').value;
+  const isActiveOnsite = statusVal === 'On Site';
+  const isActivePartial = statusVal === 'Partial Delv.';
+  const isActiveShortage = kpiFilter === 'shortage';
+  const isActiveQtyShort = kpiFilter === 'qty-short';
+
+  // Active filters strip
+  const chips = [];
+  const fa = document.getElementById('filterArea').value;
+  const fp = document.getElementById('filterPackage').value;
+  const fs = document.getElementById('filterStatus').value;
+  const fq = document.getElementById('globalSearch').value;
+  if (fa) chips.push({ label: 'Area: ' + fa, action: `document.getElementById('filterArea').value='';applyFilters()` });
+  if (fp) chips.push({ label: 'Package: ' + fp, action: `document.getElementById('filterPackage').value='';applyFilters()` });
+  if (fs) chips.push({ label: 'Status: ' + (fs === '-' ? 'Pending' : fs), action: `document.getElementById('filterStatus').value='';applyFilters()` });
+  if (fq) chips.push({ label: 'Search: "' + fq + '"', action: `document.getElementById('globalSearch').value='';applyFilters()` });
+  if (kpiFilter === 'shortage') chips.push({ label: 'Shortage Items only', action: `kpiFilter=null;applyFilters()` });
+  if (kpiFilter === 'qty-short') chips.push({ label: 'Qty Shortfall only', action: `kpiFilter=null;applyFilters()` });
+
+  const filterStripHtml = chips.length === 0 ? '' : `
+    <div class="filter-strip visible">
+      <span class="filter-strip-label">Active filters</span>
+      ${chips.map(c => `<span class="filter-chip">${c.label} <button onclick="${c.action}" title="Remove filter">×</button></span>`).join('')}
+      <button class="filter-chip" style="cursor:pointer;background:var(--red-bg);color:var(--red);border:none;font-family:var(--sans);" onclick="resetAllFilters()">Clear all</button>
+    </div>`;
+
   el.innerHTML = `
+    ${filterStripHtml}
     <div class="kpi-grid animate-in">
-      <div class="kpi-card">
+      <div class="kpi-card clickable" onclick="resetAllFilters()" title="Click to clear all filters">
+        <span class="kpi-hint">Click to reset</span>
         <div class="kpi-label">Total Line Items</div>
         <div class="kpi-value">${fmt(total)}</div>
         <div class="kpi-sub">${fmt(pkgs.length)} packages across ${areas.length} areas</div>
       </div>
-      <div class="kpi-card good">
+      <div class="kpi-card good clickable ${isActiveOnsite ? 'active-filter' : ''}" onclick="setKpiFilter('onsite')" title="Filter: On Site items">
+        <span class="kpi-hint">Click to filter</span>
         <div class="kpi-label">On Site</div>
         <div class="kpi-value">${fmt(onSite)}</div>
         <div class="kpi-sub">${pct(onSite,total)}% of line items</div>
       </div>
-      <div class="kpi-card warn">
+      <div class="kpi-card warn clickable ${isActivePartial ? 'active-filter' : ''}" onclick="setKpiFilter('partial')" title="Filter: Partial Delivery items">
+        <span class="kpi-hint">Click to filter</span>
         <div class="kpi-label">Partial Delivery</div>
         <div class="kpi-value">${fmt(partial)}</div>
         <div class="kpi-sub">${pct(partial,total)}% — in transit</div>
       </div>
-      <div class="kpi-card alert">
+      <div class="kpi-card alert clickable ${isActiveShortage ? 'active-filter' : ''}" onclick="setKpiFilter('shortage')" title="Filter: Shortage items only">
+        <span class="kpi-hint">Click to filter</span>
         <div class="kpi-label">Shortage Items</div>
         <div class="kpi-value">${fmt(shortageItems.length)}</div>
         <div class="kpi-sub">${fmt(waitingPO)} still waiting PO</div>
       </div>
-      <div class="kpi-card ${availPct >= 60 ? 'good' : availPct >= 30 ? 'warn' : 'alert'}">
+      <div class="kpi-card ${availPct >= 60 ? 'good' : availPct >= 30 ? 'warn' : 'alert'} clickable ${isActiveQtyShort ? 'active-filter' : ''}" onclick="setKpiFilter('qty-short')" title="Filter: Items with qty shortfall (qtySite < qtyReq)">
+        <span class="kpi-hint">Click to filter</span>
         <div class="kpi-label">Qty Availability</div>
         <div class="kpi-value">${availPct}%</div>
         <div class="kpi-sub">${fmt(Math.round(totalOnSiteQty))} of ${fmt(Math.round(totalQty))}</div>
