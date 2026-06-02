@@ -1398,7 +1398,11 @@ function renderPage(page) {
 // ════════════════════════════════════════════
 function fmt(n) { return n.toLocaleString('en-US'); }
 function pct(a, b) { return b > 0 ? Math.round(a/b*100) : 0; }
-function statusTag(s) {
+// An item is "closed" (no longer relevant) when its required qty is 0 — nothing to build, nothing to ship.
+function isClosedItem(d) { return !d.qtyReq || d.qtyReq === 0; }
+function statusTag(s, d) {
+  // If a row object is passed and it's a closed item, surface that explicitly
+  if (d && isClosedItem(d)) return '<span class="tag tag-gray" title="Required qty = 0, item closed">Closed</span>';
   if (s === 'On Site') return '<span class="tag tag-green">On Site</span>';
   if (s === 'Partial Delv.') return '<span class="tag tag-amber">Partial</span>';
   return '<span class="tag tag-gray">Pending</span>';
@@ -1644,20 +1648,30 @@ function renderBuildability() {
   });
 
   const boms = Object.values(bomGroups).map(b => {
-    // Buildability is now based on QTY percentage, not line item count
-    b.buildPct = b.totalQtyReq > 0 ? Math.round((b.totalQtySite / b.totalQtyReq) * 100) : 100;
-    b.buildable = b.buildPct === 100;
+    // A BOM with zero required quantity across all lines is "closed", not "buildable"
+    b.closed = b.totalQtyReq === 0;
+    // Buildability is based on QTY percentage (only meaningful when there's actual requirement)
+    b.buildPct = b.totalQtyReq > 0 ? Math.round((b.totalQtySite / b.totalQtyReq) * 100) : 0;
+    b.buildable = !b.closed && b.buildPct === 100;
     return b;
-  }).sort((a,b) => b.buildPct - a.buildPct);
+  }).sort((a,b) => {
+    // Sort: buildable > partial > blocked > closed
+    if (a.closed && !b.closed) return 1;
+    if (b.closed && !a.closed) return -1;
+    return b.buildPct - a.buildPct;
+  });
 
   const fullyBuildable = boms.filter(b => b.buildable).length;
-  const partialBuild = boms.filter(b => b.buildPct > 0 && !b.buildable).length;
-  const notBuildable = boms.filter(b => b.buildPct === 0).length;
+  const partialBuild = boms.filter(b => !b.closed && b.buildPct > 0 && !b.buildable).length;
+  const notBuildable = boms.filter(b => !b.closed && b.buildPct === 0).length;
+  const closedBoms = boms.filter(b => b.closed).length;
 
   // Group by area for buildability cards
   const areaBuilds = {};
   boms.forEach(b => {
-    if (!areaBuilds[b.area]) areaBuilds[b.area] = { buildable: 0, partial: 0, blocked: 0, total: 0 };
+    if (!areaBuilds[b.area]) areaBuilds[b.area] = { buildable: 0, partial: 0, blocked: 0, closed: 0, total: 0 };
+    // Closed BOMs are tracked separately so they don't pollute the area's buildability percentage
+    if (b.closed) { areaBuilds[b.area].closed++; return; }
     areaBuilds[b.area].total++;
     if (b.buildable) areaBuilds[b.area].buildable++;
     else if (b.buildPct > 0) areaBuilds[b.area].partial++;
@@ -1716,7 +1730,7 @@ function renderBuildability() {
     <div class="section-header animate-in" style="animation-delay:0.2s">
       <span class="section-num">02</span>
       <span class="section-title">BOM Buildability Detail</span>
-      <span class="section-sub">${boms.length} BOMs analyzed</span>
+      <span class="section-sub">${boms.length} BOMs analyzed${closedBoms > 0 ? ` · ${closedBoms} closed (no requirement)` : ''}</span>
     </div>
     <div class="table-wrap animate-in" style="animation-delay:0.25s">
       <div class="table-scroll">
@@ -1735,8 +1749,17 @@ function renderBuildability() {
             </tr>
           </thead>
           <tbody>
-            ${boms.slice(0, 60).map((b, i) => `
-              <tr style="cursor:pointer" onclick="showBomDetail('${b.title.replace(/'/g,"\\'")}')">
+            ${boms.slice(0, 60).map((b, i) => {
+              // A BOM where every line has qtyReq=0 is closed, not "buildable"
+              const isClosed = b.closed;
+              const statusBadge = isClosed
+                ? '<span class="tag tag-gray">CLOSED</span>'
+                : (b.buildable ? '<span class="tag tag-green">BUILDABLE</span>' : '<span class="tag tag-red">BLOCKED</span>');
+              const buildCell = isClosed
+                ? '<span style="font-size:11px;color:var(--olive)">no requirement</span>'
+                : progressBar(b.buildPct, b.buildPct >= 80 ? 'green' : b.buildPct >= 40 ? 'amber' : 'red');
+              return `
+              <tr style="cursor:pointer${isClosed ? ';opacity:0.6' : ''}" onclick="showBomDetail('${b.title.replace(/'/g,"\\'")}')">
                 <td style="color:var(--olive);font-size:11px">${i+1}</td>
                 <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${b.title}</td>
                 <td><span class="tag tag-blue">${b.area}</span></td>
@@ -1744,10 +1767,10 @@ function renderBuildability() {
                 <td class="cell-num" style="color:var(--green)">${b.available}</td>
                 <td class="cell-num" style="color:var(--amber)">${b.partial}</td>
                 <td class="cell-num" style="color:var(--red)">${b.missing}</td>
-                <td>${progressBar(b.buildPct, b.buildPct >= 80 ? 'green' : b.buildPct >= 40 ? 'amber' : 'red')}</td>
-                <td>${b.buildable ? '<span class="tag tag-green">BUILDABLE</span>' : '<span class="tag tag-red">BLOCKED</span>'}</td>
-              </tr>
-            `).join('')}
+                <td>${buildCell}</td>
+                <td>${statusBadge}</td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
@@ -2388,7 +2411,25 @@ function closeModal() {
 
 function showBomDetail(bomTitle) {
   const items = filteredData.filter(d => (d.bomTitle || d.bomNo) === bomTitle);
-  const available = items.filter(d => d.qtySite >= d.qtyReq && d.qtyReq > 0).length;
+
+  // Closed items (qtyReq=0) are not part of buildability — exclude from both numerator AND denominator
+  const activeItems = items.filter(d => !isClosedItem(d));
+  const closedCount = items.length - activeItems.length;
+  const available = activeItems.filter(d => d.qtySite >= d.qtyReq).length;
+  const total = activeItems.length;
+
+  let headerTagHtml;
+  if (total === 0) {
+    // Every line in this BOM has qtyReq=0 — the BOM is effectively closed
+    headerTagHtml = '<span class="tag tag-gray">CLOSED — No requirement</span>';
+  } else if (available === total) {
+    headerTagHtml = '<span class="tag tag-green">FULLY BUILDABLE</span>';
+  } else {
+    headerTagHtml = `<span class="tag tag-red">${available}/${total} parts available</span>`;
+  }
+  const closedNote = closedCount > 0
+    ? `<span style="font-size:11px;color:var(--olive);margin-left:8px">+ ${closedCount} closed item${closedCount > 1 ? 's' : ''} (qty req = 0)</span>`
+    : '';
 
   const modal = document.getElementById('modalContent');
   modal.innerHTML = `
@@ -2397,7 +2438,7 @@ function showBomDetail(bomTitle) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div style="margin-bottom:16px">
-      <span class="tag ${available === items.length ? 'tag-green' : 'tag-red'}">${available === items.length ? 'FULLY BUILDABLE' : `${available}/${items.length} parts available`}</span>
+      ${headerTagHtml}${closedNote}
     </div>
     <div class="table-scroll">
       <table>
@@ -2405,18 +2446,20 @@ function showBomDetail(bomTitle) {
           <tr><th>Part</th><th>Size</th><th>Description</th><th>Qty Req</th><th>On Site</th><th>Shortage</th><th>PO</th><th>Status</th></tr>
         </thead>
         <tbody>
-          ${items.map(d => `
-            <tr>
+          ${items.map(d => {
+            const closed = isClosedItem(d);
+            return `
+            <tr${closed ? ' style="opacity:0.55"' : ''}>
               <td>${d.partName}</td>
               <td class="cell-num">${d.lSize}"</td>
               <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${d.desc}</td>
               <td class="cell-num">${fmt(d.qtyReq)}</td>
               <td class="cell-num">${fmt(d.qtySite)}</td>
               <td class="cell-num" style="color:${d.shortage < 0 ? 'var(--red)' : 'var(--green)'}">${fmt(d.shortage)}</td>
-              <td style="font-size:11px">${d.poNo}</td>
-              <td>${statusTag(d.statusMtl)}</td>
-            </tr>
-          `).join('')}
+              <td style="font-size:11px">${closed ? '<span style="color:var(--warm-gray)">—</span>' : d.poNo}</td>
+              <td>${statusTag(d.statusMtl, d)}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
@@ -2429,12 +2472,24 @@ function showAreaBuildDetail(area) {
   const boms = {};
   items.forEach(d => {
     const key = d.bomTitle || 'Unknown';
-    if (!boms[key]) boms[key] = { total: 0, available: 0 };
-    boms[key].total++;
-    if (d.qtySite >= d.qtyReq && d.qtyReq > 0) boms[key].available++;
+    if (!boms[key]) boms[key] = { total: 0, available: 0, closed: 0 };
+    // Exclude closed items (qtyReq=0) from totals so denominators match numerators
+    if (isClosedItem(d)) {
+      boms[key].closed++;
+    } else {
+      boms[key].total++;
+      if (d.qtySite >= d.qtyReq) boms[key].available++;
+    }
   });
 
-  const bomList = Object.entries(boms).sort((a,b) => (b[1].available/b[1].total) - (a[1].available/a[1].total));
+  // Sort: BOMs with no active parts (fully closed) go last
+  const bomList = Object.entries(boms).sort((a,b) => {
+    if (a[1].total === 0 && b[1].total > 0) return 1;
+    if (b[1].total === 0 && a[1].total > 0) return -1;
+    const ra = a[1].total > 0 ? a[1].available/a[1].total : 0;
+    const rb = b[1].total > 0 ? b[1].available/b[1].total : 0;
+    return rb - ra;
+  });
 
   const modal = document.getElementById('modalContent');
   modal.innerHTML = `
@@ -2449,11 +2504,23 @@ function showAreaBuildDetail(area) {
         </thead>
         <tbody>
           ${bomList.map(([title, b]) => {
+            // Special case: every line in the BOM is closed (qtyReq=0)
+            if (b.total === 0) {
+              return `
+              <tr style="cursor:pointer;opacity:0.6" onclick="closeModal();setTimeout(()=>showBomDetail('${title.replace(/'/g,"\\'")}'),200)">
+                <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${title}</td>
+                <td class="cell-num">0 <span style="font-size:10px;color:var(--warm-gray)">(${b.closed} closed)</span></td>
+                <td class="cell-num">—</td>
+                <td><span style="font-size:11px;color:var(--olive)">no requirement</span></td>
+                <td><span class="tag tag-gray">CLOSED</span></td>
+              </tr>`;
+            }
             const bp = pct(b.available, b.total);
+            const closedHint = b.closed > 0 ? ` <span style="font-size:10px;color:var(--warm-gray)">(+${b.closed} closed)</span>` : '';
             return `
             <tr style="cursor:pointer" onclick="closeModal();setTimeout(()=>showBomDetail('${title.replace(/'/g,"\\'")}'),200)">
               <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${title}</td>
-              <td class="cell-num">${b.total}</td>
+              <td class="cell-num">${b.total}${closedHint}</td>
               <td class="cell-num">${b.available}</td>
               <td>${progressBar(bp, bp >= 80 ? 'green' : bp >= 40 ? 'amber' : 'red')}</td>
               <td>${b.available === b.total ? '<span class="tag tag-green">READY</span>' : '<span class="tag tag-red">BLOCKED</span>'}</td>
