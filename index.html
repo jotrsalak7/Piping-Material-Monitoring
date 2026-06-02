@@ -704,6 +704,30 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
   font-variant-numeric: tabular-nums;
 }
 
+/* clickable legend (PO Status donut) */
+.legend-item.legend-clickable {
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 4px;
+  transition: background var(--transition);
+}
+.legend-item.legend-clickable:hover {
+  background: var(--cream);
+  color: var(--ink);
+}
+.legend-item.legend-active {
+  background: var(--ink);
+  color: #fff;
+}
+.legend-item.legend-active .legend-value { color: #fff; }
+.legend-item.legend-active::after {
+  content: '✓';
+  margin-left: 6px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
 /* ── BUILDABILITY ── */
 .build-grid {
   display: grid;
@@ -1027,6 +1051,11 @@ tbody tr:hover { background: rgba(27,54,93,0.02); }
             <option value="Partial Delv.">Partial Delv.</option>
             <option value="-">Pending</option>
           </select>
+          <select class="filter-select" id="filterPO" onchange="applyFilters()">
+            <option value="">All PO</option>
+            <option value="PO DONE">PO Done</option>
+            <option value="WAITING PO">Waiting PO</option>
+          </select>
           <button class="btn-reset-filter" id="btnResetFilter" onclick="resetAllFilters()" title="Clear all filters">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Reset
@@ -1191,12 +1220,14 @@ function applyFilters() {
   const area = document.getElementById('filterArea').value;
   const pkg = document.getElementById('filterPackage').value;
   const status = document.getElementById('filterStatus').value;
+  const po = document.getElementById('filterPO').value;
   const search = document.getElementById('globalSearch').value.toLowerCase();
 
   filteredData = ALL_DATA.filter(d => {
     if (area && d.area !== area) return false;
     if (pkg && d.package !== pkg) return false;
     if (status && d.statusMtl !== status) return false;
+    if (po && d.statusPO !== po) return false;
     // KPI-driven filters (shortage / qty-short)
     if (kpiFilter === 'shortage' && !(d.shortage < 0)) return false;
     if (kpiFilter === 'qty-short' && !(d.qtySite < d.qtyReq)) return false;
@@ -1217,6 +1248,13 @@ function handleSearch() { applyFilters(); }
 // ════════════════════════════════════════════
 // KPI-AS-FILTER LOGIC
 // ════════════════════════════════════════════
+function setPoFilter(value) {
+  const poSel = document.getElementById('filterPO');
+  // Toggle: clicking active filter clears it
+  poSel.value = (poSel.value === value) ? '' : value;
+  applyFilters();
+}
+
 function setKpiFilter(filter) {
   const statusSel = document.getElementById('filterStatus');
   // Toggle behavior: clicking active filter clears it
@@ -1240,6 +1278,7 @@ function resetAllFilters() {
   document.getElementById('filterArea').value = '';
   document.getElementById('filterPackage').value = '';
   document.getElementById('filterStatus').value = '';
+  document.getElementById('filterPO').value = '';
   document.getElementById('globalSearch').value = '';
   kpiFilter = null;
   applyFilters();
@@ -1250,6 +1289,7 @@ function hasAnyActiveFilter() {
     document.getElementById('filterArea').value ||
     document.getElementById('filterPackage').value ||
     document.getElementById('filterStatus').value ||
+    document.getElementById('filterPO').value ||
     document.getElementById('globalSearch').value ||
     kpiFilter
   );
@@ -1279,6 +1319,7 @@ async function syncData() {
       // Preserve current filter selections
       const selArea = document.getElementById('filterArea').value;
       const selPkg = document.getElementById('filterPackage').value;
+      const selPO = document.getElementById('filterPO').value;
       
       // Reset and repopulate dropdowns in case there are new areas/packages
       document.getElementById('filterArea').innerHTML = '<option value="">All Areas</option>';
@@ -1292,6 +1333,7 @@ async function syncData() {
       if ([...document.getElementById('filterPackage').options].some(o => o.value === selPkg)) {
         document.getElementById('filterPackage').value = selPkg;
       }
+      document.getElementById('filterPO').value = selPO;
       
       applyFilters(); // Re-render current page with new data
       setupNav(); // Update badges
@@ -1435,10 +1477,12 @@ function renderOverview() {
   const fa = document.getElementById('filterArea').value;
   const fp = document.getElementById('filterPackage').value;
   const fs = document.getElementById('filterStatus').value;
+  const fpo = document.getElementById('filterPO').value;
   const fq = document.getElementById('globalSearch').value;
   if (fa) chips.push({ label: 'Area: ' + fa, action: `document.getElementById('filterArea').value='';applyFilters()` });
   if (fp) chips.push({ label: 'Package: ' + fp, action: `document.getElementById('filterPackage').value='';applyFilters()` });
   if (fs) chips.push({ label: 'Status: ' + (fs === '-' ? 'Pending' : fs), action: `document.getElementById('filterStatus').value='';applyFilters()` });
+  if (fpo) chips.push({ label: 'PO: ' + (fpo === 'PO DONE' ? 'PO Done' : 'Waiting PO'), action: `document.getElementById('filterPO').value='';applyFilters()` });
   if (fq) chips.push({ label: 'Search: "' + fq + '"', action: `document.getElementById('globalSearch').value='';applyFilters()` });
   if (kpiFilter === 'shortage') chips.push({ label: 'Shortage Items only', action: `kpiFilter=null;applyFilters()` });
   if (kpiFilter === 'qty-short') chips.push({ label: 'Qty Shortfall only', action: `kpiFilter=null;applyFilters()` });
@@ -1509,8 +1553,8 @@ function renderOverview() {
             {value: waitingPO, color: '#b33a3a', label: 'Waiting PO'}
           ])}
           <div class="donut-legend">
-            <div class="legend-item"><div class="legend-dot" style="background:var(--ink)"></div> PO Done <span class="legend-value">${fmt(total - waitingPO)}</span></div>
-            <div class="legend-item"><div class="legend-dot" style="background:#b33a3a"></div> Waiting PO <span class="legend-value">${fmt(waitingPO)}</span></div>
+            <div class="legend-item legend-clickable ${document.getElementById('filterPO').value === 'PO DONE' ? 'legend-active' : ''}" onclick="setPoFilter('PO DONE')" title="Filter: items with PO Done"><div class="legend-dot" style="background:var(--ink)"></div> PO Done <span class="legend-value">${fmt(total - waitingPO)}</span></div>
+            <div class="legend-item legend-clickable ${document.getElementById('filterPO').value === 'WAITING PO' ? 'legend-active' : ''}" onclick="setPoFilter('WAITING PO')" title="Filter: items still waiting PO"><div class="legend-dot" style="background:#b33a3a"></div> Waiting PO <span class="legend-value">${fmt(waitingPO)}</span></div>
           </div>
         </div>
       </div>
